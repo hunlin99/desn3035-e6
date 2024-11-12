@@ -28,56 +28,46 @@ jobs:
           name: docs
           path: pdfs
 
- create-release:
+release:
     name: Create Release and Upload Artifact
     runs-on: ubuntu-latest
     needs: converttopdf
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 1: Create a new release with a randomly generated tag name
-      - name: Create a new release
-        id: create_release
-        run: |
-          TAG_NAME=$(date +'%Y%m%d%H%M%S')-${RANDOM}
-          echo "Release tag: $TAG_NAME"
-          
-          # Create the release using the GitHub API
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d "{\"tag_name\": \"$TAG_NAME\", \"name\": \"$TAG_NAME\", \"draft\": false, \"prerelease\": false}" \
-            https://api.github.com/repos/${{ github.repository }}/releases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Step 2: Download the artifact called "docs" from the previous job
-      - name: Download docs artifact
+      - name: Download "docs" artifact from previous job
         uses: actions/download-artifact@v3
         with:
           name: docs
+          path: ./downloaded_docs
 
-      # Step 3: List the downloaded files recursively
       - name: List downloaded files
         run: |
-          echo "Listing files in the 'docs' artifact:"
-          find .
+          echo "Listing downloaded files:"
+          find ./downloaded_docs -type f
 
-      # Step 4: Upload the artifact to the release
-      - name: Upload artifact to the release
+      - name: Generate random tag name
+        id: generate_tag
         run: |
-          TAG_NAME=$(date +'%Y%m%d%H%M%S')-${RANDOM}
-          echo "Uploading artifact to release with tag: $TAG_NAME"
-          
-          # Upload the docs artifact to the release
-          RELEASE_ID=$(curl -s \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG_NAME | jq .id)
+          TAG_NAME="release-$(uuidgen)"
+          echo "Generated tag: $TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_ENV
 
-          # Upload the artifact
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -F "file=@docs" \
-            https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=docs.zip
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.tag_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload PDF to GitHub Release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./downloaded_docs/terms.pdf
+          asset_name: terms.pdf
+          asset_content_type: application/pdf
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
